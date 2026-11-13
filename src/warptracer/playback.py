@@ -120,10 +120,12 @@ def _make_renderer(track, *, headless, fps, width, height, device, follow_height
     direction /= np.linalg.norm(direction)
     # A far plane sized to the whole track wastes depth-buffer precision for a
     # close-up follow camera, causing z-fighting on nearly coplanar geometry.
-    far_plane = max(10 * follow_height, 50) if follow_height is not None else 10 * span
+    # Likewise a 1 cm near plane speckles the wide shot; 5 cm is still far
+    # closer than the camera ever gets.
+    far_plane = max(10 * follow_height, 50) if follow_height is not None else 4 * span
     try:
         renderer = wp.render.OpenGLRenderer(title="WarpTracer", up_axis="Y", fps=fps,
-            screen_width=width, screen_height=height, near_plane=.01, far_plane=far_plane,
+            screen_width=width, screen_height=height, near_plane=.05, far_plane=far_plane,
             camera_pos=tuple(_to_gl(position)), camera_front=tuple(_to_gl(direction)), camera_up=tuple(_to_gl((0., 0., 1.))),
             draw_grid=False, draw_sky=False, draw_axis=False, show_info=False,
             enable_backface_culling=False, background_color=(.08, .10, .13),
@@ -140,12 +142,11 @@ def _draw_track(renderer, track):
     identity = _quat_to_gl((0., 0., 0., 1.))
     if isinstance(track, (OvalTrack, MapTrack, LayeredTrack)):
         colors = {"road": (.28, .30, .33), "structure": (.45, .40, .34)}
-        # Warp 1.17's flat-shading path scrambles the layered meshes' triangles.
-        # Their quads share no vertices, so smooth shading still renders flat faces.
-        smooth = isinstance(track, LayeredTrack)
+        # Warp 1.17's flat-shading path scrambles indexed meshes' triangles (the
+        # oval's barriers render as filled discs), so always use smooth shading.
         for name, (vertices, faces) in track.mesh_parts().items():
             color = colors.get(name, (.60, .60, .60))
-            renderer.render_mesh(f"track/{name}", _to_gl(vertices), faces, colors=color, smooth_shading=smooth)
+            renderer.render_mesh(f"track/{name}", _to_gl(vertices), faces, colors=color, smooth_shading=True)
     else:
         renderer.render_box("floor", tuple(_to_gl((0, 0, -.03))), identity,
                             _extent_to_gl(((track.length+2*track.barrier_thickness)/2,
